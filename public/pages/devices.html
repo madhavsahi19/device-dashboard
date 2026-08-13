@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeviceWatch — Device Master</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="app-bg">
+
+<div class="app-shell">
+  <div id="sidebarMount"></div>
+
+  <main class="main">
+    <div id="topbarMount"></div>
+
+    <section class="form-panel">
+      <h3>Add a device or service</h3>
+      <div class="panel-sub">This is stored locally for now — once the Express + MySQL backend is live, this form will POST to /api/devices.</div>
+
+      <form id="deviceForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="devName">Device Name</label>
+            <input type="text" id="devName" placeholder="e.g. Core Switch 02" required>
+          </div>
+          <div class="field">
+            <label for="devType">Device Type</label>
+            <select id="devType" required>
+              <option value="" disabled selected>Select type</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="devAddress">IP Address / Service URL</label>
+            <input type="text" id="devAddress" placeholder="e.g. 10.0.1.5 or https://service.local" required>
+          </div>
+          <div class="field">
+            <label for="devLocation">Location</label>
+            <input type="text" id="devLocation" placeholder="e.g. Server Room A" required>
+          </div>
+          <div class="field">
+            <label for="devStatus">Status</label>
+            <select id="devStatus" required>
+              <option value="online">Online</option>
+              <option value="warning">Warning</option>
+              <option value="offline">Offline</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="devRemarks">Remarks</label>
+            <input type="text" id="devRemarks" placeholder="Optional notes">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="resetBtn">Reset sample data</button>
+          <button type="submit" class="btn-add">Add device</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <h3>Device master list</h3>
+        <div class="table-tools">
+          <input type="text" class="search-input" id="searchInput" placeholder="Search name, IP, location...">
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Device Name</th>
+              <th>Type</th>
+              <th>IP / Service URL</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Last Checked</th>
+              <th>Remarks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="deviceTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast">Device added</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+  requireAuth();
+  renderShell({
+    active: "devices",
+    title: "Device Master",
+    desc: "Add and manage the devices and services being monitored",
+    basePath: "../",
+  });
+
+  // Populate device type dropdown
+  const typeSelect = document.getElementById("devType");
+  DEVICE_TYPES.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    typeSelect.appendChild(opt);
+  });
+
+  let allDevices = loadDevices();
+
+  function statusLabel(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+
+  function renderTable(devices) {
+    const tbody = document.getElementById("deviceTableBody");
+    if (!devices.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">No devices yet — add your first one above.</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = devices.map(d => `
+      <tr>
+        <td class="dev-name">${d.name}</td>
+        <td><span class="dev-type-badge">${d.type}</span></td>
+        <td class="mono">${d.address}</td>
+        <td>${d.location}</td>
+        <td>
+          <span class="status-pill ${d.status}">
+            <span class="dot"></span>${statusLabel(d.status)}
+          </span>
+        </td>
+        <td class="mono">${d.lastChecked}</td>
+        <td>${d.remarks ? d.remarks : '<span style="color:var(--muted)">—</span>'}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" title="Delete" onclick="handleDelete(${d.id})">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  function applySearch() {
+    const query = document.getElementById("searchInput").value.toLowerCase();
+    const filtered = allDevices.filter(d =>
+      !query ||
+      d.name.toLowerCase().includes(query) ||
+      d.address.toLowerCase().includes(query) ||
+      d.location.toLowerCase().includes(query)
+    );
+    renderTable(filtered);
+  }
+
+  function refresh() {
+    allDevices = loadDevices();
+    applySearch();
+  }
+
+  function handleDelete(id) {
+    if (confirm("Remove this device from the master list?")) {
+      deleteDevice(id);
+      refresh();
+      showToast("Device removed");
+    }
+  }
+
+  document.getElementById("deviceForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const device = {
+      name: document.getElementById("devName").value.trim(),
+      type: document.getElementById("devType").value,
+      address: document.getElementById("devAddress").value.trim(),
+      location: document.getElementById("devLocation").value.trim(),
+      status: document.getElementById("devStatus").value,
+      remarks: document.getElementById("devRemarks").value.trim(),
+    };
+    addDevice(device);
+    this.reset();
+    typeSelect.selectedIndex = 0;
+    refresh();
+    showToast(`"${device.name}" added to the master list`);
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    if (confirm("This will reset the device list back to the original sample data. Continue?")) {
+      resetToSeed();
+      refresh();
+      showToast("Sample data restored");
+    }
+  });
+
+  document.getElementById("searchInput").addEventListener("input", applySearch);
+
+  refresh();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeviceWatch — Dashboard</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body class="app-bg">
+
+<div class="app-shell">
+  <div id="sidebarMount"></div>
+
+  <main class="main">
+    <div id="topbarMount"></div>
+
+    <section class="card-grid" id="cardGrid"></section>
+
+    <section class="panel-grid">
+      <div class="panel">
+        <h3>Online vs Offline</h3>
+        <div class="panel-sub">Live breakdown across all monitored devices and services</div>
+        <canvas id="statusDoughnut" height="180"></canvas>
+        <div class="legend-row" id="doughnutLegend"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Devices by type</h3>
+        <div class="panel-sub">Where your monitored inventory is concentrated</div>
+        <canvas id="typeBar" height="180"></canvas>
+      </div>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <h3>All devices — current status</h3>
+        <div class="table-tools">
+          <input type="text" class="search-input" id="searchInput" placeholder="Search name, IP, location...">
+          <select class="filter-select" id="statusFilter">
+            <option value="all">All statuses</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="warning">Warning</option>
+          </select>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Device Name</th>
+              <th>Type</th>
+              <th>IP / Service URL</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Last Checked</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody id="deviceTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/layout.js"></script>
+<script>
+  requireAuth();
+  renderShell({
+    active: "dashboard",
+    title: "Dashboard",
+    desc: "Overview of every monitored device and service",
+  });
+
+  let allDevices = loadDevices();
+  let doughnutChart, barChart;
+
+  function statusLabel(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function renderCards(devices) {
+    const s = getSummary(devices);
+    document.getElementById("cardGrid").innerHTML = `
+      <div class="stat-card total">
+        <div class="accent-bar"></div>
+        <div class="eyebrow">Total Devices</div>
+        <div class="value">${s.total}</div>
+        <div class="sub">Across all locations</div>
+      </div>
+      <div class="stat-card online">
+        <div class="accent-bar"></div>
+        <div class="eyebrow">Online</div>
+        <div class="value">${s.online}</div>
+        <div class="sub">${s.total ? Math.round((s.online / s.total) * 100) : 0}% of fleet healthy</div>
+      </div>
+      <div class="stat-card offline">
+        <div class="accent-bar"></div>
+        <div class="eyebrow">Offline</div>
+        <div class="value">${s.offline}</div>
+        <div class="sub">Needs attention now</div>
+      </div>
+      <div class="stat-card warning">
+        <div class="accent-bar"></div>
+        <div class="eyebrow">Warning</div>
+        <div class="value">${s.warning}</div>
+        <div class="sub">Degraded but reachable</div>
+      </div>
+    `;
+  }
+
+  function renderCharts(devices) {
+    const s = getSummary(devices);
+
+    const doughnutCtx = document.getElementById("statusDoughnut");
+    const doughnutData = {
+      labels: ["Online", "Offline", "Warning"],
+      datasets: [{
+        data: [s.online, s.offline, s.warning],
+        backgroundColor: ["#34D399", "#F5657B", "#F5B95B"],
+        borderColor: "#10192E",
+        borderWidth: 3,
+        hoverOffset: 6,
+      }],
+    };
+    if (doughnutChart) doughnutChart.destroy();
+    doughnutChart = new Chart(doughnutCtx, {
+      type: "doughnut",
+      data: doughnutData,
+      options: {
+        cutout: "68%",
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    document.getElementById("doughnutLegend").innerHTML = `
+      <div class="legend-item"><span class="legend-dot" style="background:#34D399"></span>Online — ${s.online}</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#F5657B"></span>Offline — ${s.offline}</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#F5B95B"></span>Warning — ${s.warning}</div>
+    `;
+
+    const typeCounts = {};
+    devices.forEach(d => { typeCounts[d.type] = (typeCounts[d.type] || 0) + 1; });
+    const barCtx = document.getElementById("typeBar");
+    if (barChart) barChart.destroy();
+    barChart = new Chart(barCtx, {
+      type: "bar",
+      data: {
+        labels: Object.keys(typeCounts),
+        datasets: [{
+          data: Object.values(typeCounts),
+          backgroundColor: "#4FD1C5",
+          borderRadius: 5,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#8B96B5", font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { color: "#8B96B5", stepSize: 1 }, grid: { color: "#24304F" }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function renderTable(devices) {
+    const tbody = document.getElementById("deviceTableBody");
+    if (!devices.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">No devices match your search/filter.</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = devices.map(d => `
+      <tr>
+        <td class="dev-name">${d.name}</td>
+        <td><span class="dev-type-badge">${d.type}</span></td>
+        <td class="mono">${d.address}</td>
+        <td>${d.location}</td>
+        <td>
+          <span class="status-pill ${d.status}">
+            <span class="dot"></span>${statusLabel(d.status)}
+          </span>
+        </td>
+        <td class="mono">${d.lastChecked}</td>
+        <td>${d.remarks ? d.remarks : '<span style="color:var(--muted)">—</span>'}</td>
+      </tr>
+    `).join("");
+  }
+
+  function applyFilters() {
+    const query = document.getElementById("searchInput").value.toLowerCase();
+    const status = document.getElementById("statusFilter").value;
+    let filtered = allDevices.filter(d => {
+      const matchesQuery = !query ||
+        d.name.toLowerCase().includes(query) ||
+        d.address.toLowerCase().includes(query) ||
+        d.location.toLowerCase().includes(query);
+      const matchesStatus = status === "all" || d.status === status;
+      return matchesQuery && matchesStatus;
+    });
+    renderTable(filtered);
+  }
+
+  function refreshAll() {
+    allDevices = loadDevices();
+    renderCards(allDevices);
+    renderCharts(allDevices);
+    applyFilters();
+  }
+
+  document.getElementById("searchInput").addEventListener("input", applyFilters);
+  document.getElementById("statusFilter").addEventListener("change", applyFilters);
+
+  refreshAll();
+</script>
+
+</body>
+</html>

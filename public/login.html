@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeviceWatch — Sign in</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="app-bg">
+
+<div class="login-shell">
+  <div class="login-side">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>DeviceWatch</span>
+    </div>
+
+    <div class="pitch">
+      <h1>Every device.<br>One screen.<br>No surprises.</h1>
+      <p>Track servers, services, and network gear from a single console — status, uptime, and last-checked time at a glance.</p>
+      <div class="pulse-rail" aria-hidden="true">
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      </div>
+    </div>
+
+    <div class="footnote">DEVICEWATCH v0.1 &middot; UI PROTOTYPE &middot; DUMMY DATA MODE</div>
+  </div>
+
+  <div class="login-form-wrap">
+    <div class="login-card">
+      <h2>Sign in</h2>
+      <div class="sub">Enter any username and password to continue — this build runs on local dummy data, there's no real auth yet.</div>
+
+      <div class="login-error" id="loginError">Please enter both a username and password.</div>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="e.g. madhav" autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-primary">Sign in to dashboard</button>
+      </form>
+
+      <div class="login-meta">
+        <span>Project build</span>
+        <a href="#" onclick="return false;">Forgot password?</a>
+      </div>
+
+      <div class="login-note mono">
+        Frontend prototype — using dummy data for now, backend integration coming next.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script>
+  document.getElementById("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+    const errorBox = document.getElementById("loginError");
+
+    if (fakeLogin(username, password)) {
+      errorBox.classList.remove("show");
+      window.location.href = "index.html";
+    } else {
+      errorBox.classList.add("show");
+      errorBox.style.display = "block";
+    }
+  });
+
+  // If already "logged in", skip straight to dashboard
+  if (isLoggedIn()) {
+    window.location.href = "index.html";
+  }
+</script>
+
+</body>
+</html>
