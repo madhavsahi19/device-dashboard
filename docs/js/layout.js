@@ -63,7 +63,7 @@ function renderShell({ active, title, desc, basePath = "" }) {
           <div class="desc">${desc}</div>
         </div>
         <div class="topbar-right">
-          <div class="live-chip"><span class="live-dot"></span> Live &middot; dummy data mode</div>
+          <div class="live-chip"><span class="live-dot"></span> Live &middot; MySQL connected</div>
         </div>
       </div>
     `;

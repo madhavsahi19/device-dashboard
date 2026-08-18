@@ -75,7 +75,7 @@
     desc: "Overview of every monitored device and service",
   });
 
-  let allDevices = loadDevices();
+  let allDevices = [];
   let doughnutChart, barChart;
 
   function statusLabel(s) {
@@ -204,8 +204,8 @@
     renderTable(filtered);
   }
 
-  function refreshAll() {
-    allDevices = loadDevices();
+  async function refreshAll() {
+    allDevices = await loadDevices();
     renderCards(allDevices);
     renderCharts(allDevices);
     applyFilters();

@@ -108,7 +108,7 @@
     typeSelect.appendChild(opt);
   });
 
-  let allDevices = loadDevices();
+  let allDevices = [];
 
   function statusLabel(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
@@ -162,20 +162,20 @@
     renderTable(filtered);
   }
 
-  function refresh() {
-    allDevices = loadDevices();
+  async function refresh() {
+    allDevices = await loadDevices();
     applySearch();
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (confirm("Remove this device from the master list?")) {
-      deleteDevice(id);
-      refresh();
+      await deleteDevice(id);
+      await refresh();
       showToast("Device removed");
     }
   }
 
-  document.getElementById("deviceForm").addEventListener("submit", function (e) {
+  document.getElementById("deviceForm").addEventListener("submit", async function (e) {
     e.preventDefault();
     const device = {
       name: document.getElementById("devName").value.trim(),
@@ -185,19 +185,15 @@
       status: document.getElementById("devStatus").value,
       remarks: document.getElementById("devRemarks").value.trim(),
     };
-    addDevice(device);
+    await addDevice(device);
     this.reset();
     typeSelect.selectedIndex = 0;
-    refresh();
+    await refresh();
     showToast(`"${device.name}" added to the master list`);
   });
 
   document.getElementById("resetBtn").addEventListener("click", function () {
-    if (confirm("This will reset the device list back to the original sample data. Continue?")) {
-      resetToSeed();
-      refresh();
-      showToast("Sample data restored");
-    }
+    alert("Sample data reset isn't available now that devices are stored in MySQL. Delete devices individually instead.");
   });
 
   document.getElementById("searchInput").addEventListener("input", applySearch);
