@@ -4,10 +4,11 @@ const DEVICE_TYPES = ["Server", "Network Switch", "Firewall", "Storage", "Databa
 
 const AUTH_KEY = "devicewatch_auth";
 
-async function loadDevices() {
-  const res = await fetch(`${API_BASE}/devices`);
-  const rows = await res.json();
-  return rows.map(d => ({
+async function loadDevices({ page = 1, limit = 50, search = "", status = "all" } = {}) {
+  const params = new URLSearchParams({ page, limit, search, status });
+  const res = await fetch(`${API_BASE}/devices?${params.toString()}`);
+  const data = await res.json();
+  const devices = data.devices.map(d => ({
     id: d.id,
     name: d.name,
     type: d.type,
@@ -17,6 +18,17 @@ async function loadDevices() {
     lastChecked: d.last_checked ? d.last_checked.slice(0, 16).replace("T", " ") : "",
     remarks: d.remarks || "",
   }));
+  return { devices, total: data.total, page: data.page, limit: data.limit };
+}
+
+async function loadTypeSummary() {
+  const res = await fetch(`${API_BASE}/devices/types`);
+  return res.json();
+}
+
+async function loadSummary() {
+  const res = await fetch(`${API_BASE}/devices/summary`);
+  return res.json();
 }
 
 async function addDevice(device) {
@@ -30,14 +42,6 @@ async function addDevice(device) {
 
 async function deleteDevice(id) {
   await fetch(`${API_BASE}/devices/${id}`, { method: "DELETE" });
-}
-
-function getSummary(devices) {
-  const total = devices.length;
-  const online = devices.filter(d => d.status === "online").length;
-  const offline = devices.filter(d => d.status === "offline").length;
-  const warning = devices.filter(d => d.status === "warning").length;
-  return { total, online, offline, warning };
 }
 
 function fakeLogin(username, password) {

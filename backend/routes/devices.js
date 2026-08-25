@@ -4,7 +4,40 @@ const pool = require("../db/pool");
 
 router.get("/", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM devices ORDER BY id");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+    const status = req.query.status || "all";
+
+    let where = "WHERE (name LIKE ? OR address LIKE ? OR location LIKE ?)";
+    const params = [`%${search}%`, `%${search}%`, `%${search}%`];
+
+    if (status !== "all") {
+      where += " AND status = ?";
+      params.push(status);
+    }
+
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) as total FROM devices ${where}`,
+      params
+    );
+    const total = countRows[0].total;
+
+    const [rows] = await pool.query(
+      `SELECT * FROM devices ${where} ORDER BY id LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    res.json({ devices: rows, total, page, limit });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/types", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT type, COUNT(*) as count FROM devices GROUP BY type");
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

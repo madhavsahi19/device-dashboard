@@ -16,7 +16,7 @@
 
     <section class="form-panel">
       <h3>Add a device or service</h3>
-      <div class="panel-sub">This is stored locally for now — once the Express + MySQL backend is live, this form will POST to /api/devices.</div>
+      <div class="panel-sub">Saved directly to MySQL through the backend API.</div>
 
       <form id="deviceForm">
         <div class="form-grid">
@@ -52,7 +52,6 @@
           </div>
         </div>
         <div class="form-actions">
-          <button type="button" class="btn-secondary" id="resetBtn">Reset sample data</button>
           <button type="submit" class="btn-add">Add device</button>
         </div>
       </form>
@@ -82,6 +81,7 @@
           <tbody id="deviceTableBody"></tbody>
         </table>
       </div>
+      <div class="table-panel-header" id="paginationBar" style="border-top: 1px solid var(--line); border-bottom: none;"></div>
     </section>
   </main>
 </div>
@@ -91,7 +91,7 @@
 <script src="../js/data.js"></script>
 <script src="../js/layout.js"></script>
 <script>
-  requireAuth();
+  requireAuth("../login.html");
   renderShell({
     active: "devices",
     title: "Device Master",
@@ -99,7 +99,6 @@
     basePath: "../",
   });
 
-  // Populate device type dropdown
   const typeSelect = document.getElementById("devType");
   DEVICE_TYPES.forEach(t => {
     const opt = document.createElement("option");
@@ -108,7 +107,9 @@
     typeSelect.appendChild(opt);
   });
 
-  let allDevices = [];
+  let currentPage = 1;
+  const pageSize = 50;
+  let currentTotal = 0;
 
   function statusLabel(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
@@ -124,7 +125,7 @@
   function renderTable(devices) {
     const tbody = document.getElementById("deviceTableBody");
     if (!devices.length) {
-      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">No devices yet — add your first one above.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">No devices match your search.</div></td></tr>`;
       return;
     }
     tbody.innerHTML = devices.map(d => `
@@ -151,20 +152,32 @@
     `).join("");
   }
 
-  function applySearch() {
-    const query = document.getElementById("searchInput").value.toLowerCase();
-    const filtered = allDevices.filter(d =>
-      !query ||
-      d.name.toLowerCase().includes(query) ||
-      d.address.toLowerCase().includes(query) ||
-      d.location.toLowerCase().includes(query)
-    );
-    renderTable(filtered);
+  function renderPagination() {
+    const totalPages = Math.max(1, Math.ceil(currentTotal / pageSize));
+    const start = currentTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, currentTotal);
+    document.getElementById("paginationBar").innerHTML = `
+      <div style="color: var(--muted); font-size: 13px;">Showing ${start}-${end} of ${currentTotal}</div>
+      <div class="table-tools">
+        <button class="btn-secondary" id="prevPageBtn" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
+        <div style="color: var(--muted); font-size: 13px; align-self: center;">Page ${currentPage} of ${totalPages}</div>
+        <button class="btn-secondary" id="nextPageBtn" ${currentPage >= totalPages ? "disabled" : ""}>Next</button>
+      </div>
+    `;
+    document.getElementById("prevPageBtn").addEventListener("click", () => {
+      if (currentPage > 1) { currentPage--; refresh(); }
+    });
+    document.getElementById("nextPageBtn").addEventListener("click", () => {
+      currentPage++; refresh();
+    });
   }
 
   async function refresh() {
-    allDevices = await loadDevices();
-    applySearch();
+    const search = document.getElementById("searchInput").value;
+    const result = await loadDevices({ page: currentPage, limit: pageSize, search, status: "all" });
+    currentTotal = result.total;
+    renderTable(result.devices);
+    renderPagination();
   }
 
   async function handleDelete(id) {
@@ -188,15 +201,16 @@
     await addDevice(device);
     this.reset();
     typeSelect.selectedIndex = 0;
+    currentPage = 1;
     await refresh();
     showToast(`"${device.name}" added to the master list`);
   });
 
-  document.getElementById("resetBtn").addEventListener("click", function () {
-    alert("Sample data reset isn't available now that devices are stored in MySQL. Delete devices individually instead.");
+  let searchDebounce;
+  document.getElementById("searchInput").addEventListener("input", () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => { currentPage = 1; refresh(); }, 350);
   });
-
-  document.getElementById("searchInput").addEventListener("input", applySearch);
 
   refresh();
 </script>

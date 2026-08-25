@@ -21,14 +21,14 @@
       <div class="panel">
         <h3>Online vs Offline</h3>
         <div class="panel-sub">Live breakdown across all monitored devices and services</div>
-        <canvas id="statusDoughnut" height="180"></canvas>
+        <div style="height: 240px; position: relative;"><canvas id="statusDoughnut"></canvas></div>
         <div class="legend-row" id="doughnutLegend"></div>
       </div>
 
       <div class="panel">
         <h3>Devices by type</h3>
         <div class="panel-sub">Where your monitored inventory is concentrated</div>
-        <canvas id="typeBar" height="180"></canvas>
+        <div style="height: 240px; position: relative;"><canvas id="typeBar"></canvas></div>
       </div>
     </section>
 
@@ -61,6 +61,7 @@
           <tbody id="deviceTableBody"></tbody>
         </table>
       </div>
+      <div class="table-panel-header" id="paginationBar" style="border-top: 1px solid var(--line); border-bottom: none;"></div>
     </section>
   </main>
 </div>
@@ -75,93 +76,87 @@
     desc: "Overview of every monitored device and service",
   });
 
-  let allDevices = [];
+  let currentPage = 1;
+  const pageSize = 50;
+  let currentTotal = 0;
   let doughnutChart, barChart;
 
   function statusLabel(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
-  function renderCards(devices) {
-    const s = getSummary(devices);
+  function renderCards(summary) {
     document.getElementById("cardGrid").innerHTML = `
       <div class="stat-card total">
         <div class="accent-bar"></div>
         <div class="eyebrow">Total Devices</div>
-        <div class="value">${s.total}</div>
+        <div class="value">${summary.total}</div>
         <div class="sub">Across all locations</div>
       </div>
       <div class="stat-card online">
         <div class="accent-bar"></div>
         <div class="eyebrow">Online</div>
-        <div class="value">${s.online}</div>
-        <div class="sub">${s.total ? Math.round((s.online / s.total) * 100) : 0}% of fleet healthy</div>
+        <div class="value">${summary.online}</div>
+        <div class="sub">${summary.total ? Math.round((summary.online / summary.total) * 100) : 0}% of fleet healthy</div>
       </div>
       <div class="stat-card offline">
         <div class="accent-bar"></div>
         <div class="eyebrow">Offline</div>
-        <div class="value">${s.offline}</div>
+        <div class="value">${summary.offline}</div>
         <div class="sub">Needs attention now</div>
       </div>
       <div class="stat-card warning">
         <div class="accent-bar"></div>
         <div class="eyebrow">Warning</div>
-        <div class="value">${s.warning}</div>
+        <div class="value">${summary.warning}</div>
         <div class="sub">Degraded but reachable</div>
       </div>
     `;
   }
 
-  function renderCharts(devices) {
-    const s = getSummary(devices);
-
+  function renderCharts(summary, typeCounts) {
     const doughnutCtx = document.getElementById("statusDoughnut");
-    const doughnutData = {
-      labels: ["Online", "Offline", "Warning"],
-      datasets: [{
-        data: [s.online, s.offline, s.warning],
-        backgroundColor: ["#34D399", "#F5657B", "#F5B95B"],
-        borderColor: "#10192E",
-        borderWidth: 3,
-        hoverOffset: 6,
-      }],
-    };
     if (doughnutChart) doughnutChart.destroy();
     doughnutChart = new Chart(doughnutCtx, {
       type: "doughnut",
-      data: doughnutData,
-      options: {
-        cutout: "68%",
-        plugins: { legend: { display: false } },
+      data: {
+        labels: ["Online", "Offline", "Warning"],
+        datasets: [{
+          data: [summary.online, summary.offline, summary.warning],
+          backgroundColor: ["#34D399", "#F5657B", "#F5B95B"],
+          borderColor: "#10192E",
+          borderWidth: 3,
+          hoverOffset: 6,
+        }],
       },
+      options: { cutout: "68%", maintainAspectRatio: false, plugins: { legend: { display: false } } },
     });
 
     document.getElementById("doughnutLegend").innerHTML = `
-      <div class="legend-item"><span class="legend-dot" style="background:#34D399"></span>Online — ${s.online}</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#F5657B"></span>Offline — ${s.offline}</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#F5B95B"></span>Warning — ${s.warning}</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#34D399"></span>Online — ${summary.online}</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#F5657B"></span>Offline — ${summary.offline}</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#F5B95B"></span>Warning — ${summary.warning}</div>
     `;
 
-    const typeCounts = {};
-    devices.forEach(d => { typeCounts[d.type] = (typeCounts[d.type] || 0) + 1; });
     const barCtx = document.getElementById("typeBar");
     if (barChart) barChart.destroy();
     barChart = new Chart(barCtx, {
       type: "bar",
       data: {
-        labels: Object.keys(typeCounts),
+        labels: typeCounts.map(t => t.type),
         datasets: [{
-          data: Object.values(typeCounts),
+          data: typeCounts.map(t => t.count),
           backgroundColor: "#4FD1C5",
           borderRadius: 5,
           maxBarThickness: 28,
         }],
       },
       options: {
+        maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: "#8B96B5", font: { size: 11 } }, grid: { display: false } },
-          y: { ticks: { color: "#8B96B5", stepSize: 1 }, grid: { color: "#24304F" }, beginAtZero: true },
+          y: { ticks: { color: "#8B96B5" }, grid: { color: "#24304F" }, beginAtZero: true },
         },
       },
     });
@@ -190,29 +185,51 @@
     `).join("");
   }
 
-  function applyFilters() {
-    const query = document.getElementById("searchInput").value.toLowerCase();
-    const status = document.getElementById("statusFilter").value;
-    let filtered = allDevices.filter(d => {
-      const matchesQuery = !query ||
-        d.name.toLowerCase().includes(query) ||
-        d.address.toLowerCase().includes(query) ||
-        d.location.toLowerCase().includes(query);
-      const matchesStatus = status === "all" || d.status === status;
-      return matchesQuery && matchesStatus;
+  function renderPagination() {
+    const totalPages = Math.max(1, Math.ceil(currentTotal / pageSize));
+    const start = currentTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, currentTotal);
+    document.getElementById("paginationBar").innerHTML = `
+      <div style="color: var(--muted); font-size: 13px;">Showing ${start}-${end} of ${currentTotal}</div>
+      <div class="table-tools">
+        <button class="btn-secondary" id="prevPageBtn" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
+        <div style="color: var(--muted); font-size: 13px; align-self: center;">Page ${currentPage} of ${totalPages}</div>
+        <button class="btn-secondary" id="nextPageBtn" ${currentPage >= totalPages ? "disabled" : ""}>Next</button>
+      </div>
+    `;
+    document.getElementById("prevPageBtn").addEventListener("click", () => {
+      if (currentPage > 1) { currentPage--; loadTable(); }
     });
-    renderTable(filtered);
+    document.getElementById("nextPageBtn").addEventListener("click", () => {
+      currentPage++; loadTable();
+    });
   }
+
+  async function loadTable() {
+    const search = document.getElementById("searchInput").value;
+    const status = document.getElementById("statusFilter").value;
+    const result = await loadDevices({ page: currentPage, limit: pageSize, search, status });
+    currentTotal = result.total;
+    renderTable(result.devices);
+    renderPagination();
+  }
+
+  let searchDebounce;
+  document.getElementById("searchInput").addEventListener("input", () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => { currentPage = 1; loadTable(); }, 350);
+  });
+  document.getElementById("statusFilter").addEventListener("change", () => {
+    currentPage = 1; loadTable();
+  });
 
   async function refreshAll() {
-    allDevices = await loadDevices();
-    renderCards(allDevices);
-    renderCharts(allDevices);
-    applyFilters();
+    const summary = await loadSummary();
+    const typeCounts = await loadTypeSummary();
+    renderCards(summary);
+    renderCharts(summary, typeCounts);
+    await loadTable();
   }
-
-  document.getElementById("searchInput").addEventListener("input", applyFilters);
-  document.getElementById("statusFilter").addEventListener("change", applyFilters);
 
   refreshAll();
 </script>
