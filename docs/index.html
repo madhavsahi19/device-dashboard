@@ -20,7 +20,7 @@
     <section class="panel-grid">
       <div class="panel">
         <h3>Online vs Offline</h3>
-        <div class="panel-sub">Live breakdown across all monitored devices and services</div>
+        <div class="panel-sub">Breakdown across all monitored devices and services (status is manually entered)</div>
         <div style="height: 240px; position: relative;"><canvas id="statusDoughnut"></canvas></div>
         <div class="legend-row" id="doughnutLegend"></div>
       </div>
@@ -34,7 +34,7 @@
 
     <section class="table-panel">
       <div class="table-panel-header">
-        <h3>All devices — current status</h3>
+        <h3>All devices — manually set status</h3>
         <div class="table-tools">
           <input type="text" class="search-input" id="searchInput" placeholder="Search name, IP, location...">
           <select class="filter-select" id="statusFilter">
@@ -54,7 +54,7 @@
               <th>IP / Service URL</th>
               <th>Location</th>
               <th>Status</th>
-              <th>Last Checked</th>
+              <th>Status Set At</th>
               <th>Remarks</th>
             </tr>
           </thead>
@@ -66,6 +66,7 @@
   </main>
 </div>
 
+<script src="js/config.js"></script>
 <script src="js/data.js"></script>
 <script src="js/layout.js"></script>
 <script>
@@ -97,19 +98,19 @@
         <div class="accent-bar"></div>
         <div class="eyebrow">Online</div>
         <div class="value">${summary.online}</div>
-        <div class="sub">${summary.total ? Math.round((summary.online / summary.total) * 100) : 0}% of fleet healthy</div>
+        <div class="sub">${summary.total ? Math.round((summary.online / summary.total) * 100) : 0}% marked online</div>
       </div>
       <div class="stat-card offline">
         <div class="accent-bar"></div>
         <div class="eyebrow">Offline</div>
         <div class="value">${summary.offline}</div>
-        <div class="sub">Needs attention now</div>
+        <div class="sub">Marked offline</div>
       </div>
       <div class="stat-card warning">
         <div class="accent-bar"></div>
         <div class="eyebrow">Warning</div>
         <div class="value">${summary.warning}</div>
-        <div class="sub">Degraded but reachable</div>
+        <div class="sub">Marked as warning</div>
       </div>
     `;
   }
@@ -170,17 +171,17 @@
     }
     tbody.innerHTML = devices.map(d => `
       <tr>
-        <td class="dev-name">${d.name}</td>
-        <td><span class="dev-type-badge">${d.type}</span></td>
-        <td class="mono">${d.address}</td>
-        <td>${d.location}</td>
+        <td class="dev-name">${escapeHtml(d.name)}</td>
+        <td><span class="dev-type-badge">${escapeHtml(d.type)}</span></td>
+        <td class="mono">${escapeHtml(d.address)}</td>
+        <td>${escapeHtml(d.location)}</td>
         <td>
           <span class="status-pill ${d.status}">
             <span class="dot"></span>${statusLabel(d.status)}
           </span>
         </td>
-        <td class="mono">${d.lastChecked}</td>
-        <td>${d.remarks ? d.remarks : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="mono">${escapeHtml(d.statusSetAt)}</td>
+        <td>${d.remarks ? escapeHtml(d.remarks) : '<span style="color:var(--muted)">—</span>'}</td>
       </tr>
     `).join("");
   }
@@ -205,13 +206,50 @@
     });
   }
 
+    let tableRequestId = 0;
+
+  function renderTableError(message) {
+    document.getElementById("deviceTableBody").innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty-state" style="color: var(--offline);">
+          Could not load devices: ${escapeHtml(message)}
+          <div style="margin-top:12px;"><button class="btn-secondary" onclick="loadTable()">Retry</button></div>
+        </div>
+      </td></tr>`;
+    document.getElementById("paginationBar").innerHTML = "";
+  }
+
+  function renderSummaryError(message) {
+    if (doughnutChart) { doughnutChart.destroy(); doughnutChart = null; }
+    if (barChart) { barChart.destroy(); barChart = null; }
+    document.getElementById("doughnutLegend").innerHTML =
+      `<div class="legend-item" style="color: var(--offline);">Chart data unavailable</div>`;
+    document.getElementById("cardGrid").innerHTML = `
+      <div class="panel" style="grid-column: 1 / -1;">
+        <div class="empty-state" style="color: var(--offline);">
+          Could not load the summary and charts: ${escapeHtml(message)}
+          <div style="margin-top:12px;"><button class="btn-secondary" onclick="refreshAll()">Retry</button></div>
+        </div>
+      </div>`;
+  }
+
+  // Returns true on success, false on failure (the error is shown in the table).
   async function loadTable() {
+    const requestId = ++tableRequestId;
     const search = document.getElementById("searchInput").value;
     const status = document.getElementById("statusFilter").value;
-    const result = await loadDevices({ page: currentPage, limit: pageSize, search, status });
-    currentTotal = result.total;
-    renderTable(result.devices);
-    renderPagination();
+    try {
+      const result = await loadDevices({ page: currentPage, limit: pageSize, search, status });
+      if (requestId !== tableRequestId) return true; // a newer request replaced this one
+      currentTotal = result.total;
+      renderTable(result.devices);
+      renderPagination();
+      return true;
+    } catch (err) {
+      if (requestId !== tableRequestId) return false;
+      renderTableError(err.message);
+      return false;
+    }
   }
 
   let searchDebounce;
@@ -223,15 +261,28 @@
     currentPage = 1; loadTable();
   });
 
-  async function refreshAll() {
-    const summary = await loadSummary();
-    const typeCounts = await loadTypeSummary();
-    renderCards(summary);
-    renderCharts(summary, typeCounts);
-    await loadTable();
-  }
+    async function refreshAll() {
+    const chip = document.getElementById("connectionChip");
+    let failed = false;
 
-  refreshAll();
+    try {
+      const [summary, typeCounts] = await Promise.all([loadSummary(), loadTypeSummary()]);
+      renderCards(summary);
+      renderCharts(summary, typeCounts);
+    } catch (err) {
+      failed = true;
+      renderSummaryError(err.message);
+    }
+
+    if (!(await loadTable())) failed = true;
+
+    if (chip) {
+      chip.innerHTML = failed
+        ? `<span class="live-dot" style="background: var(--offline);"></span> Manual status &middot; Some data failed to load`
+        : `<span class="live-dot"></span> Manual status &middot; MySQL connected`;
+    }
+  }
+   refreshAll();
 </script>
 
 </body>

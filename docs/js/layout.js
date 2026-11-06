@@ -17,7 +17,8 @@ function iconLogout() {
 
 function renderShell({ active, title, desc, basePath = "" }) {
   const user = getCurrentUser();
-  const initials = user && user.username ? user.username.slice(0, 2).toUpperCase() : "MD";
+  const safeUsername = user && user.username ? escapeHtml(user.username) : "";
+  const initials = safeUsername ? safeUsername.slice(0, 2).toUpperCase() : "MD";
 
   const sidebarMount = document.getElementById("sidebarMount");
   if (sidebarMount) {
@@ -38,7 +39,7 @@ function renderShell({ active, title, desc, basePath = "" }) {
         <div class="sidebar-footer">
           <div class="who">
             <span class="avatar">${initials}</span>
-            <span class="label-text">${user ? user.username : "Guest"}</span>
+            <span class="label-text">${safeUsername || "Guest"}</span>
           </div>
           <a href="#" class="logout-link label-text" id="logoutLink">${iconLogout()} Log out</a>
         </div>
@@ -63,7 +64,7 @@ function renderShell({ active, title, desc, basePath = "" }) {
           <div class="desc">${desc}</div>
         </div>
         <div class="topbar-right">
-          <div class="live-chip"><span class="live-dot"></span> Live &middot; MySQL connected</div>
+          <div class="live-chip" id="connectionChip"><span class="live-dot"></span> Manual status &middot; Checking connection...</div>
         </div>
       </div>
     `;

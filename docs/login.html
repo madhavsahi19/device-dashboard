@@ -23,13 +23,13 @@
       </div>
     </div>
 
-    <div class="footnote">DEVICEWATCH v0.1 &middot; UI PROTOTYPE &middot; DUMMY DATA MODE</div>
+    <div class="footnote">DEVICEWATCH v0.1 &middot; MANUAL STATUS ENTRY</div>
   </div>
 
   <div class="login-form-wrap">
     <div class="login-card">
       <h2>Sign in</h2>
-      <div class="sub">Enter any username and password to continue — this build runs on local dummy data, there's no real auth yet.</div>
+      <div class="sub">Sign in with your DeviceWatch account.</div>
 
       <div class="login-error" id="loginError">Please enter both a username and password.</div>
 
@@ -57,20 +57,30 @@
   </div>
 </div>
 
+<script src="js/config.js"></script>
 <script src="js/data.js"></script>
 <script>
-  document.getElementById("loginForm").addEventListener("submit", function (e) {
+  document.getElementById("loginForm").addEventListener("submit", async function (e) {
     e.preventDefault();
     const username = document.getElementById("username").value;
     const password = document.getElementById("password").value;
     const errorBox = document.getElementById("loginError");
+    const submitBtn = this.querySelector("button[type=submit]");
 
-    if (fakeLogin(username, password)) {
-      errorBox.classList.remove("show");
+    errorBox.classList.remove("show");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Signing in...";
+
+    try {
+      await login(username, password);
       window.location.href = "index.html";
-    } else {
+    } catch (err) {
+      errorBox.textContent = err.message || "Login failed. Please try again.";
       errorBox.classList.add("show");
       errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Sign in to dashboard";
     }
   });
 

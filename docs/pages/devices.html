@@ -16,7 +16,7 @@
 
     <section class="form-panel">
       <h3>Add a device or service</h3>
-      <div class="panel-sub">Saved directly to MySQL through the backend API.</div>
+      <div class="panel-sub">Saved directly to MySQL through the backend API. Status is set manually here — there's no automated health check yet.</div>
 
       <form id="deviceForm">
         <div class="form-grid">
@@ -73,7 +73,7 @@
               <th>IP / Service URL</th>
               <th>Location</th>
               <th>Status</th>
-              <th>Last Checked</th>
+              <th>Status Set At</th>
               <th>Remarks</th>
               <th></th>
             </tr>
@@ -88,6 +88,7 @@
 
 <div class="toast" id="toast">Device added</div>
 
+<script src="../js/config.js"></script>
 <script src="../js/data.js"></script>
 <script src="../js/layout.js"></script>
 <script>
@@ -130,17 +131,17 @@
     }
     tbody.innerHTML = devices.map(d => `
       <tr>
-        <td class="dev-name">${d.name}</td>
-        <td><span class="dev-type-badge">${d.type}</span></td>
-        <td class="mono">${d.address}</td>
-        <td>${d.location}</td>
+        <td class="dev-name">${escapeHtml(d.name)}</td>
+        <td><span class="dev-type-badge">${escapeHtml(d.type)}</span></td>
+        <td class="mono">${escapeHtml(d.address)}</td>
+        <td>${escapeHtml(d.location)}</td>
         <td>
           <span class="status-pill ${d.status}">
             <span class="dot"></span>${statusLabel(d.status)}
           </span>
         </td>
-        <td class="mono">${d.lastChecked}</td>
-        <td>${d.remarks ? d.remarks : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="mono">${escapeHtml(d.statusSetAt)}</td>
+        <td>${d.remarks ? escapeHtml(d.remarks) : '<span style="color:var(--muted)">—</span>'}</td>
         <td>
           <div class="row-actions">
             <button class="icon-btn" title="Delete" onclick="handleDelete(${d.id})">
@@ -172,19 +173,55 @@
     });
   }
 
+    let refreshRequestId = 0;
+
+  function renderTableError(message) {
+    document.getElementById("deviceTableBody").innerHTML = `
+      <tr><td colspan="8">
+        <div class="empty-state" style="color: var(--offline);">
+          Could not load devices: ${escapeHtml(message)}
+          <div style="margin-top:12px;"><button class="btn-secondary" onclick="refresh()">Retry</button></div>
+        </div>
+      </td></tr>`;
+    document.getElementById("paginationBar").innerHTML = "";
+  }
+
   async function refresh() {
-    const search = document.getElementById("searchInput").value;
-    const result = await loadDevices({ page: currentPage, limit: pageSize, search, status: "all" });
-    currentTotal = result.total;
-    renderTable(result.devices);
-    renderPagination();
+    const requestId = ++refreshRequestId;
+    const chip = document.getElementById("connectionChip");
+    try {
+      const search = document.getElementById("searchInput").value;
+      const result = await loadDevices({ page: currentPage, limit: pageSize, search, status: "all" });
+      if (requestId !== refreshRequestId) return; // a newer request replaced this one
+
+      // If the last item on a page was deleted, move back to the last valid page
+      if (result.devices.length === 0 && result.total > 0 && currentPage > 1) {
+        currentPage = Math.ceil(result.total / pageSize);
+        return refresh();
+      }
+
+      currentTotal = result.total;
+      renderTable(result.devices);
+      renderPagination();
+      if (chip) chip.innerHTML = `<span class="live-dot"></span> Manual status &middot; MySQL connected`;
+    } catch (err) {
+      if (requestId !== refreshRequestId) return;
+      renderTableError(err.message);
+      if (chip) {
+        chip.innerHTML = `<span class="live-dot" style="background: var(--offline);"></span> Manual status &middot; Could not load data`;
+      }
+    }
   }
 
   async function handleDelete(id) {
     if (confirm("Remove this device from the master list?")) {
-      await deleteDevice(id);
-      await refresh();
-      showToast("Device removed");
+      try {
+        await deleteDevice(id);
+        await refresh();
+        showToast("Device removed");
+      } catch (err) {
+        showToast(err.message || "Failed to delete device");
+      }
     }
   }
 
@@ -198,12 +235,22 @@
       status: document.getElementById("devStatus").value,
       remarks: document.getElementById("devRemarks").value.trim(),
     };
-    await addDevice(device);
-    this.reset();
-    typeSelect.selectedIndex = 0;
-    currentPage = 1;
-    await refresh();
-    showToast(`"${device.name}" added to the master list`);
+    const submitBtn = this.querySelector(".btn-add");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Adding...";
+    try {
+      await addDevice(device);
+      this.reset();
+      typeSelect.selectedIndex = 0;
+      currentPage = 1;
+      await refresh();
+      showToast(`"${device.name}" added to the master list`);
+    } catch (err) {
+      showToast(err.message || "Failed to add device");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Add device";
+    }
   });
 
   let searchDebounce;
